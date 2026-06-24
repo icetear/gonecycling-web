@@ -1,0 +1,676 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GoneCycling – Planer</title>
+  <!-- Inline emoji favicon: avoids the 404 on /favicon.ico without an extra file. -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚲</text></svg>">
+
+  <!-- Theme: Bootstrap (CDN, for now; vendor/pin for production). -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+</head>
+<body>
+  <!-- Header / navigation bar -->
+  <nav class="navbar navbar-expand bg-body-tertiary border-bottom px-3 py-2">
+    <span class="navbar-brand mb-0 h1 d-none d-lg-inline"><span class="gc-logo">🚲</span>GoneCycling</span>
+
+    <!-- Global place/POI search (always available). Results appear as a
+         dropdown right below it + as markers on the map. -->
+    <div class="position-relative mx-2 flex-grow-1" style="max-width: 420px;">
+      <div class="input-group input-group-sm">
+        <input id="nav-search" class="form-control" placeholder="Ort oder POI suchen …" data-i18n-ph="Ort oder POI suchen …"
+               autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button id="nav-search-btn" class="btn btn-outline-secondary" type="button" title="Suchen" data-i18n-title="Suchen">🔍</button>
+        <button id="nav-search-clear" class="btn btn-outline-secondary" type="button" title="Leeren" data-i18n-title="Leeren">✕</button>
+      </div>
+      <div id="nav-search-results" class="list-group d-none position-absolute w-100"></div>
+    </div>
+
+    <div class="d-flex align-items-center gap-2 ms-auto">
+      <!-- Planning always available (offline-first, no connection needed). -->
+      <button id="btn-trips" type="button" class="btn btn-primary btn-sm" data-i18n="Reisen">Reisen</button>
+      <button id="btn-touren" type="button" class="btn btn-primary btn-sm" data-i18n="Touren">Touren</button>
+      <button id="btn-help" type="button" class="btn btn-outline-secondary btn-sm" title="Hilfe" data-i18n-title="Hilfe"
+              data-bs-toggle="modal" data-bs-target="#help-modal">?</button>
+      <button id="btn-theme" type="button" class="btn btn-outline-secondary btn-sm" title="Hell/Dunkel">🌙</button>
+      <button id="btn-lang" type="button" class="btn btn-outline-secondary btn-sm" title="Language / Sprache">EN</button>
+
+      <!-- Optional sync — state 1: anonymous, not connected -->
+      <div id="nav-disconnected" class="d-flex align-items-center gap-2">
+        <span class="text-secondary small d-none d-md-inline" data-i18n="nicht verbunden mit GoneCycling App">nicht verbunden mit GoneCycling App</span>
+        <button id="btn-open-connect" type="button" class="btn btn-outline-secondary btn-sm" data-i18n="Verbinden"
+                data-bs-toggle="modal" data-bs-target="#connect-modal">Verbinden</button>
+      </div>
+      <!-- State 2: anonymous, connected → offer an "upgrade" to a real profile -->
+      <div id="nav-connected" class="d-none d-flex align-items-center gap-2">
+        <span id="nav-status" class="text-success small" data-i18n="Verbunden">Verbunden</span>
+        <button id="btn-upgrade" type="button" class="btn btn-success btn-sm" data-i18n="Upgrade"
+                data-bs-toggle="modal" data-bs-target="#upgrade-modal">Upgrade</button>
+        <button id="btn-disconnect" type="button" class="btn btn-outline-danger btn-sm" data-i18n="Trennen">Trennen</button>
+      </div>
+      <!-- State 3: signed in with a user account — no more connect/disconnect -->
+      <div id="nav-account" class="d-none d-flex align-items-center gap-2">
+        <span id="nav-account-name" class="text-success small"></span>
+      </div>
+
+      <!-- Burger menu: settings + profile + login/logout. Profile/logout only
+           when signed in, login only when signed out (via app.js). -->
+      <div class="dropdown">
+        <button id="btn-menu" type="button" class="btn btn-outline-secondary btn-sm" title="Menü" data-i18n-title="Menü"
+                data-bs-toggle="dropdown" aria-expanded="false">☰</button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><button id="menu-settings" type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#settings-modal">⚙ <span data-i18n="Einstellungen">Einstellungen</span></button></li>
+          <li><button id="menu-pair" type="button" class="dropdown-item" data-i18n="📱 Mit iPhone koppeln">📱 Mit iPhone koppeln</button></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><button id="menu-profile" type="button" class="dropdown-item d-none" data-bs-toggle="modal" data-bs-target="#account-modal">👤 <span data-i18n="Profil">Profil</span></button></li>
+          <li><button id="menu-login" type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#login-modal" data-i18n="Anmelden">Anmelden</button></li>
+          <li><button id="menu-register" type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#upgrade-modal" data-i18n="Registrieren">Registrieren</button></li>
+          <li><button id="menu-logout" type="button" class="dropdown-item d-none" data-i18n="Abmelden">Abmelden</button></li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Map (landing page) -->
+  <div id="map" aria-label="Karte">
+    <div id="pick-banner" class="pick-banner d-none" role="status" aria-live="polite"></div>
+    <!-- Trip-planning mode: a visible indicator + "exit" while a trip is open
+         (even when the detail panel was closed). The content is filled in
+         planner.js (_renderTripModeIndicator). -->
+    <div id="trip-mode-indicator" class="trip-mode-indicator d-none" role="status" aria-live="polite"></div>
+    <!-- POI category bar: quick destinations in the current map view. -->
+    <div id="poi-bar" class="poi-bar"></div>
+  </div>
+
+  <!-- Trips list (offcanvas on the right — consistent with the detail view) -->
+  <div class="offcanvas offcanvas-end" tabindex="-1" id="trips-offcanvas" aria-labelledby="trips-offcanvas-title">
+    <div class="offcanvas-header">
+      <h5 class="offcanvas-title" id="trips-offcanvas-title" data-i18n="Reisen">Reisen</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Schließen"></button>
+    </div>
+    <div class="offcanvas-body">
+      <button id="btn-new-trip" type="button" class="btn btn-primary w-100 mb-2" data-i18n="+ Neue Reise">+ Neue Reise</button>
+      <button id="btn-import-gpx" type="button" class="btn btn-outline-secondary w-100 mb-3" data-i18n="GPX importieren">GPX importieren</button>
+      <input id="gpx-file" type="file" accept=".gpx,application/gpx+xml" class="d-none">
+      <div id="trips-list" class="list-group"></div>
+    </div>
+  </div>
+
+  <!-- Trip detail (offcanvas on the right) -->
+  <!-- backdrop=false + scroll: the detail panel does NOT block the map, so you can
+       see the route info AND at the same time interact with the route on the map
+       (insert a waypoint by click, marker detail). -->
+  <div class="offcanvas offcanvas-end" tabindex="-1" id="trip-offcanvas" aria-labelledby="trip-offcanvas-title" data-bs-backdrop="false" data-bs-scroll="true" style="width: 440px; max-width: 94vw;">
+    <div class="offcanvas-header">
+      <h5 class="offcanvas-title" id="trip-offcanvas-title" data-i18n="Reise">Reise</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Schließen"></button>
+    </div>
+    <div class="offcanvas-body" id="trip-detail"></div>
+  </div>
+
+  <!-- Tours list (offcanvas on the right — consistent with the detail view): GPX import, loop, statistics, list -->
+  <div class="offcanvas offcanvas-end" tabindex="-1" id="tours-offcanvas" aria-labelledby="tours-offcanvas-title">
+    <div class="offcanvas-header">
+      <h5 class="offcanvas-title" id="tours-offcanvas-title" data-i18n="Touren">Touren</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Schließen"></button>
+    </div>
+    <div class="offcanvas-body">
+      <div class="d-flex gap-2 mb-2">
+        <button id="btn-import-tour-gpx" type="button" class="btn btn-outline-secondary btn-sm flex-fill" data-i18n="GPX importieren">GPX importieren</button>
+        <button id="btn-roundtrip" type="button" class="btn btn-outline-secondary btn-sm flex-fill" data-i18n="Rundkurs">Rundkurs</button>
+      </div>
+      <input id="tour-gpx-file" type="file" accept=".gpx,application/gpx+xml" class="d-none">
+      <div id="tours-stats" class="card card-body py-2 mb-3 small"></div>
+      <div id="tours-list" class="list-group"></div>
+    </div>
+  </div>
+
+  <!-- Tour detail (offcanvas on the right) — likewise non-blocking (the map stays usable). -->
+  <div class="offcanvas offcanvas-end" tabindex="-1" id="tour-offcanvas" aria-labelledby="tour-offcanvas-title" data-bs-backdrop="false" data-bs-scroll="true" style="width: 420px; max-width: 94vw;">
+    <div class="offcanvas-header">
+      <h5 class="offcanvas-title" id="tour-offcanvas-title" data-i18n="Tour">Tour</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Schließen"></button>
+    </div>
+    <div class="offcanvas-body" id="tour-detail"></div>
+  </div>
+
+  <!-- Connect modal -->
+  <div class="modal fade" id="connect-modal" tabindex="-1" aria-labelledby="connect-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="connect-modal-title" data-i18n="Mit GoneCycling App verbinden">Mit GoneCycling App verbinden</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-secondary small mb-3" data-i18n="Gib den Token deiner GoneCycling-App ein – oder generiere einen neuen. Deine Reisen/Routen werden Ende-zu-Ende verschlüsselt; der Server kann sie nicht lesen.">…</p>
+          <label for="token-input" class="form-label small" data-i18n="Token">Token</label>
+          <input id="token-input" type="text" class="form-control" placeholder="Token …" data-i18n-ph="Token …"
+                 autocomplete="off" autocapitalize="off" spellcheck="false">
+          <div class="form-text" data-i18n="Bewahre den Token wie ein Passwort auf.">Bewahre den Token wie ein Passwort auf.</div>
+          <div id="connect-error" class="text-danger small mt-2 d-none"></div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-generate" type="button" class="btn btn-outline-secondary" data-i18n="Neu generieren">Neu generieren</button>
+          <button id="btn-connect-qr" type="button" class="btn btn-outline-secondary me-auto" data-i18n="📱 Mit iPhone koppeln">📱 Mit iPhone koppeln</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="Abbrechen">Abbrechen</button>
+          <button id="btn-connect" type="button" class="btn btn-primary" data-i18n="Verbinden">Verbinden</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pair with the iPhone: QR code of the pairing URI (gonecycling://pair?…) + token
+       to type in/copy. The QR content is generated ONLY locally (the secret stays
+       on the device); the QR lib comes via CDN, fallback shows the URI as text. -->
+  <div class="modal fade" id="pair-qr-modal" tabindex="-1" aria-labelledby="pair-qr-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="pair-qr-title" data-i18n="Mit iPhone koppeln">Mit iPhone koppeln</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+        <div class="modal-body text-center">
+          <p class="text-secondary small" data-i18n="Scanne diesen Code mit der GoneCycling-App auf dem iPhone – oder gib den Token dort manuell ein.">…</p>
+          <div id="pair-qr" class="gc-qr d-inline-block my-2"></div>
+          <div class="input-group input-group-sm my-2">
+            <span id="pair-qr-token" class="form-control text-truncate font-monospace" style="user-select:all"></span>
+            <button id="btn-pair-copy" type="button" class="btn btn-outline-secondary" data-i18n="Token kopieren">Token kopieren</button>
+          </div>
+          <div class="form-text text-danger" data-i18n="Behandle den Code wie ein Passwort – wer ihn hat, sieht deine Reisen.">…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Upgrade explainer: explains BEFORE the profile form what changes
+       (token/sync anonymous ↔ profile with stored user data). -->
+  <div class="modal fade" id="upgrade-modal" tabindex="-1" aria-labelledby="upgrade-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="upgrade-modal-title" data-i18n="Auf Profil upgraden?">Auf Profil upgraden?</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-warning small mb-3" data-i18n="Beim Upgrade auf ein Profil werden deine Benutzerdaten (Name, E-Mail) und der Schlüssel zum Entschlüsseln deiner Reisen auf dem Server gespeichert. Die anonyme zero-knowledge-Nutzung wird damit für dein Konto aufgegeben.">…</div>
+          <div class="row g-2">
+            <div class="col-md-6">
+              <div class="border rounded p-2 h-100">
+                <div class="fw-semibold mb-2" data-i18n="🔑 Ohne Profil: Token / Sync (anonym)">🔑 Ohne Profil: Token / Sync (anonym)</div>
+                <ul class="small mb-0 ps-3">
+                  <li data-i18n="Kein Konto, keine E-Mail, kein Passwort.">Kein Konto, keine E-Mail, kein Passwort.</li>
+                  <li data-i18n="Der Server speichert nur verschlüsselte Daten – er kann deine Reisen nicht lesen.">Der Server speichert nur verschlüsselte Daten – er kann deine Reisen nicht lesen.</li>
+                  <li data-i18n="Keine persönlichen Daten gespeichert.">Keine persönlichen Daten gespeichert.</li>
+                  <li data-i18n="Zugang nur über den geheimen Token – verloren = Daten weg.">Zugang nur über den geheimen Token – verloren = Daten weg.</li>
+                  <li data-i18n="Gerätewechsel: Token selbst übertragen.">Gerätewechsel: Token selbst übertragen.</li>
+                </ul>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="border rounded p-2 h-100">
+                <div class="fw-semibold mb-2" data-i18n="👤 Mit Profil (Upgrade)">👤 Mit Profil (Upgrade)</div>
+                <ul class="small mb-0 ps-3">
+                  <li data-i18n="Anmeldung mit E-Mail und Passwort auf jedem Gerät.">Anmeldung mit E-Mail und Passwort auf jedem Gerät.</li>
+                  <li data-i18n="Passwort vergessen? Zurücksetzen per E-Mail.">Passwort vergessen? Zurücksetzen per E-Mail.</li>
+                  <li data-i18n="Name und E-Mail werden auf dem Server gespeichert.">Name und E-Mail werden auf dem Server gespeichert.</li>
+                  <li data-i18n="Der Schlüssel zum Entschlüsseln liegt zur Wiederherstellung auf dem Server.">Der Schlüssel zum Entschlüsseln liegt zur Wiederherstellung auf dem Server.</li>
+                  <li data-i18n="Keine anonyme zero-knowledge-Nutzung mehr für dein Konto.">Keine anonyme zero-knowledge-Nutzung mehr für dein Konto.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="Abbrechen">Abbrechen</button>
+          <button id="btn-upgrade-continue" type="button" class="btn btn-primary" data-i18n="Verstanden, weiter">Verstanden, weiter</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create-profile modal ("upgrade": anonymous vault → real user account).
+       Binds the currently connected master_secret to name/e-mail/password and
+       triggers the confirmation mail. -->
+  <div class="modal fade" id="profile-modal" tabindex="-1" aria-labelledby="profile-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="profile-modal-title" data-i18n="Profil anlegen">Profil anlegen</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-secondary small mb-3" data-i18n="Lege ein Profil an, um dich künftig per E-Mail und Passwort anzumelden — auch auf einem neuen Gerät. Wir senden dir eine Bestätigungsmail.">…</p>
+          <div class="row g-2">
+            <div class="col-6">
+              <label for="profile-first" class="form-label small" data-i18n="Vorname">Vorname</label>
+              <input id="profile-first" type="text" class="form-control" autocomplete="given-name">
+            </div>
+            <div class="col-6">
+              <label for="profile-last" class="form-label small" data-i18n="Nachname">Nachname</label>
+              <input id="profile-last" type="text" class="form-control" autocomplete="family-name">
+            </div>
+          </div>
+          <label for="profile-email" class="form-label small mt-2" data-i18n="E-Mail">E-Mail</label>
+          <input id="profile-email" type="email" class="form-control" autocomplete="email">
+          <label for="profile-pass" class="form-label small mt-2" data-i18n="Passwort">Passwort</label>
+          <input id="profile-pass" type="password" class="form-control" autocomplete="new-password">
+          <label for="profile-pass2" class="form-label small mt-2" data-i18n="Passwort bestätigen">Passwort bestätigen</label>
+          <input id="profile-pass2" type="password" class="form-control" autocomplete="new-password">
+          <div id="profile-error" class="text-danger small mt-2 d-none"></div>
+          <div id="profile-success" class="text-success small mt-2 d-none"></div>
+          <button id="btn-profile-resend" type="button" class="btn btn-link btn-sm p-0 mt-2 d-none" data-i18n="Bestätigungsmail erneut senden">Bestätigungsmail erneut senden</button>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="Abbrechen">Abbrechen</button>
+          <button id="btn-profile-submit" type="button" class="btn btn-primary" data-i18n="Profil erstellen">Profil erstellen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Login modal: for activated accounts. On success app.js connects automatically
+       via the server-side stored master_secret. -->
+  <div class="modal fade" id="login-modal" tabindex="-1" aria-labelledby="login-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="login-modal-title" data-i18n="Anmelden">Anmelden</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-secondary small mb-3" data-i18n="Melde dich mit E-Mail und Passwort an.">Melde dich mit E-Mail und Passwort an.</p>
+          <label for="login-email" class="form-label small" data-i18n="E-Mail">E-Mail</label>
+          <input id="login-email" type="email" class="form-control" autocomplete="email">
+          <label for="login-pass" class="form-label small mt-2" data-i18n="Passwort">Passwort</label>
+          <input id="login-pass" type="password" class="form-control" autocomplete="current-password">
+          <div id="login-error" class="text-danger small mt-2 d-none"></div>
+          <div class="d-flex justify-content-between mt-2">
+            <button id="btn-forgot" type="button" class="btn btn-link btn-sm p-0" data-i18n="Passwort vergessen?">Passwort vergessen?</button>
+            <button id="btn-resend" type="button" class="btn btn-link btn-sm p-0 d-none" data-i18n="Bestätigungsmail erneut senden">Bestätigungsmail erneut senden</button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="Abbrechen">Abbrechen</button>
+          <button id="btn-login-submit" type="button" class="btn btn-primary" data-i18n="Anmelden">Anmelden</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Forgot-password modal: requests a reset link by mail. -->
+  <div class="modal fade" id="reset-modal" tabindex="-1" aria-labelledby="reset-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="reset-modal-title" data-i18n="Passwort zurücksetzen">Passwort zurücksetzen</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-secondary small mb-3" data-i18n="Wir senden dir einen Link zum Zurücksetzen, falls ein Konto mit dieser E-Mail existiert.">…</p>
+          <label for="reset-email" class="form-label small" data-i18n="E-Mail">E-Mail</label>
+          <input id="reset-email" type="email" class="form-control" autocomplete="email">
+          <div id="reset-msg" class="small mt-2 d-none"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="Abbrechen">Abbrechen</button>
+          <button id="btn-reset-submit" type="button" class="btn btn-primary" data-i18n="Link senden">Link senden</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Account info modal (burger → profile): shows name/e-mail + sign out. -->
+  <div class="modal fade" id="account-modal" tabindex="-1" aria-labelledby="account-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="account-modal-title" data-i18n="Mein Profil">Mein Profil</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+        <div class="modal-body">
+          <div class="fw-semibold" id="account-name"></div>
+          <div class="text-secondary small" id="account-email"></div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-open-pwchange" type="button" class="btn btn-outline-secondary me-auto" data-i18n="Passwort ändern">Passwort ändern</button>
+          <button id="btn-logout" type="button" class="btn btn-outline-danger" data-i18n="Abmelden">Abmelden</button>
+          <button id="btn-delete-profile" type="button" class="btn btn-danger" data-i18n="Profil löschen">Profil löschen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Change-password modal (from the account modal, signed in). -->
+  <div class="modal fade" id="pwchange-modal" tabindex="-1" aria-labelledby="pwchange-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="pwchange-modal-title" data-i18n="Passwort ändern">Passwort ändern</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+        <div class="modal-body">
+          <label for="pw-old" class="form-label small" data-i18n="Aktuelles Passwort">Aktuelles Passwort</label>
+          <input id="pw-old" type="password" class="form-control" autocomplete="current-password">
+          <label for="pw-new" class="form-label small mt-2" data-i18n="Neues Passwort">Neues Passwort</label>
+          <input id="pw-new" type="password" class="form-control" autocomplete="new-password">
+          <label for="pw-new2" class="form-label small mt-2" data-i18n="Passwort bestätigen">Passwort bestätigen</label>
+          <input id="pw-new2" type="password" class="form-control" autocomplete="new-password">
+          <div id="pwchange-error" class="text-danger small mt-2 d-none"></div>
+          <div id="pwchange-success" class="text-success small mt-2 d-none"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="Abbrechen">Abbrechen</button>
+          <button id="btn-pwchange-submit" type="button" class="btn btn-primary" data-i18n="Passwort ändern">Passwort ändern</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Day overview / roadbook of the trip: print-friendly day-by-day table.
+       Content is injected from planner.js into #roadbook; @media print shows only
+       this modal when printing. -->
+  <div class="modal fade" id="roadbook-modal" tabindex="-1" aria-labelledby="roadbook-title" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header no-print">
+          <h5 class="modal-title" id="roadbook-title" data-i18n="Tagesübersicht">Tagesübersicht</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+        <div class="modal-body">
+          <div id="roadbook"></div>
+        </div>
+        <div class="modal-footer no-print">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="Abbrechen">Abbrechen</button>
+          <button id="btn-roadbook-print" type="button" class="btn btn-primary" data-i18n="Drucken / als PDF speichern">Drucken / als PDF speichern</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Help/info system: large modal with a section sidebar (Bootstrap pills).
+       Content is injected from gc/help (bilingual) into #help-body. -->
+  <div class="modal fade" id="help-modal" tabindex="-1" aria-labelledby="help-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="help-modal-title" data-i18n="Hilfe & Info">Hilfe &amp; Info</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen" data-i18n-title="Schließen"></button>
+        </div>
+        <div class="modal-body" id="help-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings (modal, navigable like in the iOS app):
+       top-level menu → focused subpages with "back". New sections
+       can simply be added as another data-settings-page + menu row. -->
+  <div class="modal fade" id="settings-modal" tabindex="-1" aria-labelledby="settings-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button id="settings-back" type="button" class="btn btn-sm btn-link text-decoration-none p-0 me-2 d-none" aria-label="Zurück" data-i18n="‹ Zurück">‹ Zurück</button>
+          <h5 class="modal-title" id="settings-modal-title" data-i18n="Einstellungen">Einstellungen</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+        <div class="modal-body">
+          <!-- Root menu -->
+          <div class="list-group settings-menu" data-settings-page="menu">
+            <button type="button" class="list-group-item list-group-item-action" data-settings-nav="routing">
+              <div class="d-flex justify-content-between align-items-center">
+                <span class="fw-semibold" data-i18n="🧭 Routing">🧭 Routing</span><span class="text-secondary">›</span>
+              </div>
+              <div class="small text-secondary" data-i18n="Anbieter (OSRM/ORS/BRouter), Server & Profile">Anbieter (OSRM/ORS/BRouter), Server & Profile</div>
+            </button>
+            <button type="button" class="list-group-item list-group-item-action" data-settings-nav="quick">
+              <div class="d-flex justify-content-between align-items-center">
+                <span class="fw-semibold" data-i18n="🚩 Karten-Schnellziele">🚩 Karten-Schnellziele</span><span class="text-secondary">›</span>
+              </div>
+              <div class="small text-secondary" data-i18n="POIs beim Tippen auf die Karte (Café, Supermarkt …)">POIs beim Tippen auf die Karte (Café, Supermarkt …)</div>
+            </button>
+            <button type="button" class="list-group-item list-group-item-action" data-settings-nav="snap">
+              <div class="d-flex justify-content-between align-items-center">
+                <span class="fw-semibold" data-i18n="🏁 Etappen-Ziele">🏁 Etappen-Ziele</span><span class="text-secondary">›</span>
+              </div>
+              <div class="small text-secondary" data-i18n='Snap-Punkte für „Nächste Etappe" (Hotel, Bahnhof …)'>Snap-Punkte für „Nächste Etappe" (Hotel, Bahnhof …)</div>
+            </button>
+            <button type="button" class="list-group-item list-group-item-action" data-settings-nav="backup">
+              <div class="d-flex justify-content-between align-items-center">
+                <span class="fw-semibold" data-i18n="💾 Sicherung & Übertragung">💾 Sicherung &amp; Übertragung</span><span class="text-secondary">›</span>
+              </div>
+              <div class="small text-secondary" data-i18n="Alles exportieren / Backup importieren">Alles exportieren / Backup importieren</div>
+            </button>
+            <button type="button" class="list-group-item list-group-item-action" data-settings-nav="connect">
+              <div class="d-flex justify-content-between align-items-center">
+                <span class="fw-semibold" data-i18n="🔗 Verbindung (Companion)">🔗 Verbindung (Companion)</span><span class="text-secondary">›</span>
+              </div>
+              <div class="small text-secondary" data-i18n="Sync mit der GoneCycling-App per Token">Sync mit der GoneCycling-App per Token</div>
+            </button>
+          </div>
+
+          <!-- Subpage: routing -->
+          <div class="d-none" data-settings-page="routing">
+            <label class="form-label small" data-i18n="Anbieter">Anbieter</label>
+            <select id="rt-provider" class="form-select form-select-sm mb-3">
+              <option value="osrm">OSRM</option>
+              <option value="ors">OpenRouteService</option>
+              <option value="brouter">BRouter</option>
+            </select>
+
+            <div id="rt-group-osrm">
+              <label class="form-label small" data-i18n="OSRM-Server-URL">OSRM-Server-URL</label>
+              <input id="rt-osrm-base" class="form-control form-control-sm mb-2" placeholder="https://router.project-osrm.org">
+              <label class="form-label small" data-i18n="Profil">Profil</label>
+              <input id="rt-osrm-profile" class="form-control form-control-sm" placeholder="driving">
+              <div class="form-text" data-i18n='Der öffentliche Demo-Server unterstützt nur „driving".'>Der öffentliche Demo-Server unterstützt nur „driving".</div>
+            </div>
+
+            <div id="rt-group-ors" class="d-none">
+              <label class="form-label small" data-i18n="ORS-Server-URL">ORS-Server-URL</label>
+              <input id="rt-ors-base" class="form-control form-control-sm mb-2" placeholder="https://api.openrouteservice.org">
+              <label class="form-label small" data-i18n="Authentifizierung">Authentifizierung</label>
+              <select id="rt-ors-auth" class="form-select form-select-sm mb-2">
+                <option value="key" data-i18n="API-Schlüssel">API-Schlüssel</option>
+                <option value="basic" data-i18n="Benutzer/Passwort (Basic-Auth)">Benutzer/Passwort (Basic-Auth)</option>
+              </select>
+              <div id="rt-ors-auth-key">
+                <label class="form-label small" data-i18n="API-Schlüssel">API-Schlüssel</label>
+                <input id="rt-ors-key" class="form-control form-control-sm mb-2" placeholder="API-Key">
+              </div>
+              <div id="rt-ors-auth-basic" class="d-none">
+                <label class="form-label small" data-i18n="Benutzername">Benutzername</label>
+                <input id="rt-ors-user" class="form-control form-control-sm mb-2" placeholder="Benutzer" autocomplete="username">
+                <label class="form-label small" data-i18n="Passwort">Passwort</label>
+                <input id="rt-ors-pass" type="password" class="form-control form-control-sm mb-2" placeholder="Passwort" autocomplete="current-password">
+              </div>
+              <label class="form-label small" data-i18n="Profil">Profil</label>
+              <input id="rt-ors-profile" class="form-control form-control-sm" placeholder="cycling-regular">
+            </div>
+
+            <div id="rt-group-brouter" class="d-none">
+              <label class="form-label small" data-i18n="BRouter-Server-URL">BRouter-Server-URL</label>
+              <input id="rt-brouter-base" class="form-control form-control-sm mb-2" placeholder="https://brouter.de">
+              <label class="form-label small" data-i18n="Profil">Profil</label>
+              <input id="rt-brouter-profile" class="form-control form-control-sm" placeholder="trekking">
+            </div>
+
+            <hr class="my-3">
+            <div class="form-check form-switch mb-2">
+              <input id="rt-elev-enabled" class="form-check-input" type="checkbox" role="switch">
+              <label class="form-check-label small" for="rt-elev-enabled" data-i18n="🏔 Höhendaten laden (für Höhenprofil & Höhenmeter)">🏔 Höhendaten laden (für Höhenprofil & Höhenmeter)</label>
+            </div>
+            <label class="form-label small" data-i18n="Höhen-Dienst (URL)">Höhen-Dienst (URL)</label>
+            <input id="rt-elev-url" class="form-control form-control-sm" placeholder="https://api.opentopodata.org/v1/srtm90m">
+            <div class="form-text" data-i18n="OSRM liefert keine Höhe; ORS/BRouter schon. Bei OSRM lädt dieser Dienst die Höhen nach.">…</div>
+
+            <button id="rt-save" type="button" class="btn btn-primary w-100 mt-3" data-i18n="Routing speichern">Routing speichern</button>
+          </div>
+
+          <!-- Subpage: map quick destinations -->
+          <div class="d-none" data-settings-page="quick">
+            <div class="form-text mb-2" data-i18n="Beim Tippen auf die Karte als Schnell-Buttons verfügbar (Suche rund um den Punkt). Schalter = aktiv. Der Suchbegriff dient zugleich als Beschriftung. Wird automatisch gespeichert.">…</div>
+            <div id="poi-list"></div>
+            <button id="poi-add" type="button" class="btn btn-sm btn-outline-secondary" data-i18n="+ POI">+ POI</button>
+          </div>
+
+          <!-- Subpage: stage destinations (guided planner) -->
+          <div class="d-none" data-settings-page="snap">
+            <div class="form-text mb-2" data-i18n='Snap-Punkte für „Nächste Etappe": um die Wunschdistanz herum werden diese aktiven Ziele gesucht (z. B. Hotel, Bahnhof, Ferienwohnung). Wird automatisch gespeichert.'>…</div>
+            <div id="snap-list"></div>
+            <button id="snap-add" type="button" class="btn btn-sm btn-outline-secondary" data-i18n="+ Etappen-Ziel">+ Etappen-Ziel</button>
+          </div>
+
+          <!-- Subpage: backup & transfer -->
+          <div class="d-none" data-settings-page="backup">
+            <div class="form-text mb-2" data-i18n='Exportiert alle Reisen, Touren und Einstellungen in eine Datei. Reisen & Touren werden zusätzlich verschlüsselt mit der iPhone-App gesynct (Token unter „Verbindung").'>…</div>
+            <div class="d-flex gap-2">
+              <button id="btn-export-all" type="button" class="btn btn-sm btn-outline-primary flex-fill" data-i18n="Alles exportieren">Alles exportieren</button>
+              <button id="btn-import-all" type="button" class="btn btn-sm btn-outline-secondary flex-fill" data-i18n="Backup importieren">Backup importieren</button>
+            </div>
+            <input id="import-file" type="file" accept="application/json,.json" class="d-none">
+            <div id="backup-status" class="small text-secondary mt-2"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="Schließen">Schließen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Auto stages (modal) -->
+  <div class="modal fade" id="autoplan-modal" tabindex="-1" aria-labelledby="autoplan-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="autoplan-modal-title" data-i18n="Etappen automatisch erzeugen">Etappen automatisch erzeugen</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-secondary small" data-i18n="Die Strecke Start → (Stopps) → Ziel wird geroutet und aufgeteilt.">Die Strecke Start → (Stopps) → Ziel wird geroutet und aufgeteilt.</p>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="ap-mode" id="ap-mode-distance" value="distance" checked>
+            <label class="form-check-label" for="ap-mode-distance" data-i18n="nach Distanz">nach Distanz</label>
+          </div>
+          <div class="input-group input-group-sm mb-2">
+            <input id="ap-distance" type="number" min="1" step="1" class="form-control" value="60">
+            <span class="input-group-text" data-i18n="km pro Etappe">km pro Etappe</span>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="ap-mode" id="ap-mode-count" value="count">
+            <label class="form-check-label" for="ap-mode-count" data-i18n="nach Anzahl">nach Anzahl</label>
+          </div>
+          <div class="input-group input-group-sm">
+            <input id="ap-count" type="number" min="1" step="1" class="form-control" value="3">
+            <span class="input-group-text" data-i18n="Etappen">Etappen</span>
+          </div>
+          <div id="ap-status" class="small text-secondary mt-2"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="Abbrechen">Abbrechen</button>
+          <button id="ap-generate" type="button" class="btn btn-primary" data-i18n="Generieren">Generieren</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Guided stage planner "next stage" (modal) -->
+  <div class="modal fade" id="guided-modal" tabindex="-1" aria-labelledby="guided-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="guided-modal-title" data-i18n="Nächste Etappe">Nächste Etappe</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-secondary small mb-2" data-i18n="Gib eine Wunschdistanz an — rundum werden Ziele (deine Etappen-Ziele wie Hotel/Bahnhof/Ferienwohnung, Pflicht-Stopps und Orte) bei ~dieser Distanz gesucht. Auswahl legt die Etappe an und rückt den Startpunkt weiter.">…</p>
+          <div id="guided-cursor" class="small fw-semibold mb-2"></div>
+          <div class="input-group input-group-sm mb-2">
+            <span class="input-group-text" data-i18n="Wunschdistanz">Wunschdistanz</span>
+            <input id="guided-distance" type="number" min="5" step="5" class="form-control" value="60">
+            <span class="input-group-text">km</span>
+            <button id="guided-search" class="btn btn-primary" type="button" data-i18n="Ziele suchen">Ziele suchen</button>
+          </div>
+          <div id="guided-status" class="small text-secondary mb-1"></div>
+          <div id="guided-results" class="list-group"></div>
+          <!-- Additional list: largest places with population nearby (Overpass). -->
+          <div id="guided-cities-status" class="small text-secondary mt-3 mb-1"></div>
+          <div id="guided-cities" class="list-group"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="Schließen">Schließen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loop (modal) -->
+  <div class="modal fade" id="roundtrip-modal" tabindex="-1" aria-labelledby="roundtrip-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="roundtrip-modal-title" data-i18n="Rundkurs generieren">Rundkurs generieren</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-secondary small" data-i18n="Der Rundkurs startet an der aktuellen Kartenmitte. Verschiebe die Karte zum Startpunkt, bevor du generierst.">Der Rundkurs startet an der aktuellen Kartenmitte. Verschiebe die Karte zum Startpunkt, bevor du generierst.</p>
+          <div class="input-group input-group-sm">
+            <input id="rtrip-km" type="number" min="1" step="1" class="form-control" value="20">
+            <span class="input-group-text" data-i18n="km (ungefähr)">km (ungefähr)</span>
+          </div>
+          <div id="rtrip-status" class="small text-secondary mt-2"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="Abbrechen">Abbrechen</button>
+          <button id="rtrip-generate" type="button" class="btn btn-primary" data-i18n="Generieren">Generieren</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Bootstrap + MapLibre as global scripts; then our ES module. -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
+  <!-- QR code generator (pairing with the iPhone). Global name: qrcode. -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "gc/crypto": "{% static 'js/crypto.js' %}",
+      "gc/sync": "{% static 'js/sync.js' %}",
+      "gc/accounts": "{% static 'js/accounts.js' %}",
+      "gc/pairing": "{% static 'js/pairing.js' %}",
+      "gc/trips": "{% static 'js/trips.js' %}",
+      "gc/trips-store": "{% static 'js/trips-store.js' %}",
+      "gc/rides": "{% static 'js/rides.js' %}",
+      "gc/rides-store": "{% static 'js/rides-store.js' %}",
+      "gc/geocode": "{% static 'js/geocode.js' %}",
+      "gc/poi": "{% static 'js/poi.js' %}",
+      "gc/guided": "{% static 'js/guided.js' %}",
+      "gc/backup": "{% static 'js/backup.js' %}",
+      "gc/routing": "{% static 'js/routing.js' %}",
+      "gc/elevation": "{% static 'js/elevation.js' %}",
+      "gc/autoplan": "{% static 'js/autoplan.js' %}",
+      "gc/gpx": "{% static 'js/gpx.js' %}",
+      "gc/ridestats": "{% static 'js/ridestats.js' %}",
+      "gc/ridetime": "{% static 'js/ridetime.js' %}",
+      "gc/sun": "{% static 'js/sun.js' %}",
+      "gc/overpass": "{% static 'js/overpass.js' %}",
+      "gc/roundtrip": "{% static 'js/roundtrip.js' %}",
+      "gc/basemaps": "{% static 'js/basemaps.js' %}",
+      "gc/i18n": "{% static 'js/i18n.js' %}",
+      "gc/help": "{% static 'js/help.js' %}",
+      "gc/planner": "{% static 'js/planner.js' %}"
+    }
+  }
+  </script>
+  <!-- URL subpath (reverse proxy), e.g. "/gonecycling" — for the API base. -->
+  <script>window.GC_BASE_PATH = "{{ base_path }}";</script>
+  <script type="module" src="{% static 'js/app.js' %}"></script>
+</body>
+</html>

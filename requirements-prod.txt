@@ -1,0 +1,4 @@
+# Additional packages for production operation (Gunicorn + PostgreSQL).
+-r requirements.txt
+gunicorn>=22,<24
+psycopg[binary]>=3.1,<4

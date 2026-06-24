@@ -1,0 +1,24 @@
+# systemd service: runs the deploy script when the web app requests an
+# update. Triggered by the associated .path unit.
+#
+# Installation (once, on the server):
+#   sudo cp deploy/host/gonecycling-deploy.{service,path} /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now gonecycling-deploy.path
+#
+# Adapt the repo path below (Environment) and in the .path unit if needed.
+[Unit]
+Description=GoneCycling: git pull + container rebuild on request from the web app
+
+[Service]
+Type=oneshot
+# Runs as root because docker/git need host access. Alternatively set a
+# Docker-authorized user: User=deploy
+WorkingDirectory=/opt/gonecycling-web
+Environment=GC_REPO_DIR=/opt/gonecycling-web
+# Set HOME so that `git pull` finds root's SSH key/known_hosts
+# (systemd doesn't always set HOME). Adapt accordingly for a different user.
+Environment=HOME=/root
+# For docker-compose v1 (with hyphen) use instead:
+#   Environment=GC_COMPOSE=docker-compose -f docker-compose.prod.yml
+ExecStart=/opt/gonecycling-web/deploy/host/gonecycling-deploy.sh

@@ -1,0 +1,31 @@
+# Keep the build context lean AND prevent secrets/local state from ending up in
+# the image. The runtime configuration comes from the host .env via
+# `env_file:` (docker compose) as environment variables — NOT from a file copied
+# into the image. Therefore exclude .env here.
+.git
+.gitignore
+.env
+.env.*
+
+# Python/tooling artifacts
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Local data / generated outputs (collectstatic re-runs during the build)
+db.sqlite3
+db.sqlite3-journal
+staticfiles/
+deploy-state/
+*.log
+
+# JS test toolchain (not needed for the image)
+node_modules/
+tests-js/
+
+# Editor/IDE
+.idea/
+.vscode/

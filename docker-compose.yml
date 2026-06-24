@@ -1,0 +1,42 @@
+# Local production-like stack: Django/Gunicorn + PostgreSQL.
+# Start:  docker compose up --build
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: gonecycling
+      POSTGRES_USER: gonecycling
+      # Local dev stack: no DB password needed. `trust` allows connections from
+      # the internal Compose network without a password (NOT intended for
+      # production – in production set DATABASE_URL with a real password via .env).
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gonecycling"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  web:
+    build: .
+    environment:
+      DEBUG: "False"
+      # Placeholder key for the local stack only. In production set a real random
+      # value via .env (see .env.example).
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-django-insecure-local-dev-only}
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
+      # Passwordless connection to the local Postgres (POSTGRES_HOST_AUTH_METHOD=trust).
+      DATABASE_URL: postgres://gonecycling@db:5432/gonecycling
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    # Allows the container to reach the host (e.g. local Postfix on :25)
+    # via EMAIL_HOST=host.docker.internal.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  pgdata:

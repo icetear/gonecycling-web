@@ -1,0 +1,817 @@
+/* ===========================================================================
+   GoneCycling Planner — Theme & Styling
+   Outline:  1) Theme variables / Bootstrap overrides  2) Layout  3) Navbar
+            4) Offcanvas + Detail  5) Lists/Cards  6) Map overlays
+            7) POI management  8) Miscellany
+   =========================================================================== */
+
+/* --- 1) Theme: accent color (teal green) via Bootstrap CSS variables ------- */
+:root {
+  --gc-accent: #0d9488; /* teal-600 */
+  --gc-accent-hover: #0f766e; /* teal-700 */
+  --gc-accent-soft: #e6f5f2; /* very light teal for surfaces */
+  --gc-ink: #1f2a37; /* main text */
+  --gc-muted: #6b7682;
+  --gc-bg: #eef2f4; /* app background */
+  --gc-shadow: 0 6px 24px rgba(16, 42, 56, 0.12);
+
+  /* Slightly softer radii app-wide (cards, inputs, buttons). */
+  --bs-border-radius: 0.6rem;
+  --bs-border-radius-sm: 0.45rem;
+  --bs-border-radius-lg: 0.85rem;
+  --bs-primary: var(--gc-accent);
+  --bs-link-color: var(--gc-accent);
+  --bs-link-hover-color: var(--gc-accent-hover);
+}
+
+/* --- Dark mode -----------------------------------------------------------
+   Bootstrap 5.3 (`data-bs-theme="dark"` on <html>) themes maps/lists/forms/
+   modal/offcanvas automatically. Here only our own (non-Bootstrap) surfaces:
+   navbar, map overlays, popups. */
+[data-bs-theme="dark"] {
+  --gc-accent-soft: rgba(13, 148, 136, 0.2);
+  --gc-ink: #e6edf3;
+  --gc-muted: #9aa7b2;
+  --gc-bg: #0f1620;
+  --gc-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+}
+[data-bs-theme="dark"] body {
+  background: var(--gc-bg);
+}
+[data-bs-theme="dark"] .navbar {
+  background: #161e29 !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+[data-bs-theme="dark"] .offcanvas-body {
+  background: #131b25;
+}
+[data-bs-theme="dark"] .gc-basemap-btn {
+  background: rgba(22, 30, 41, 0.92);
+  color: var(--gc-ink);
+}
+[data-bs-theme="dark"] .gc-basemap-panel {
+  background: #161e29;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+[data-bs-theme="dark"] .poi-chip {
+  background: rgba(22, 30, 41, 0.95);
+  color: var(--gc-ink);
+}
+[data-bs-theme="dark"] .maplibregl-popup-content {
+  background: #161e29;
+  color: var(--gc-ink);
+}
+[data-bs-theme="dark"] .maplibregl-popup-anchor-top .maplibregl-popup-tip,
+[data-bs-theme="dark"] .maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+[data-bs-theme="dark"] .maplibregl-popup-anchor-top-right .maplibregl-popup-tip {
+  border-bottom-color: #161e29;
+}
+[data-bs-theme="dark"] .maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+[data-bs-theme="dark"] .maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+[data-bs-theme="dark"] .maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip {
+  border-top-color: #161e29;
+}
+[data-bs-theme="dark"] .maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: #161e29;
+}
+[data-bs-theme="dark"] .maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: #161e29;
+}
+[data-bs-theme="dark"] .maplibregl-popup-close-button {
+  color: var(--gc-ink);
+}
+
+/* Switch primary buttons + outline to the accent color (Bootstrap 5.3 variables). */
+.btn-primary {
+  --bs-btn-bg: var(--gc-accent);
+  --bs-btn-border-color: var(--gc-accent);
+  --bs-btn-hover-bg: var(--gc-accent-hover);
+  --bs-btn-hover-border-color: var(--gc-accent-hover);
+  --bs-btn-active-bg: var(--gc-accent-hover);
+  --bs-btn-active-border-color: var(--gc-accent-hover);
+  --bs-btn-disabled-bg: var(--gc-accent);
+  --bs-btn-disabled-border-color: var(--gc-accent);
+}
+.btn-outline-primary {
+  --bs-btn-color: var(--gc-accent);
+  --bs-btn-border-color: var(--gc-accent);
+  --bs-btn-hover-bg: var(--gc-accent);
+  --bs-btn-hover-border-color: var(--gc-accent);
+  --bs-btn-active-bg: var(--gc-accent);
+  --bs-btn-active-border-color: var(--gc-accent);
+}
+.text-primary {
+  color: var(--gc-accent) !important;
+}
+.badge.text-bg-primary {
+  background-color: var(--gc-accent) !important;
+}
+.form-check-input:checked {
+  background-color: var(--gc-accent);
+  border-color: var(--gc-accent);
+}
+.form-control:focus,
+.form-select:focus,
+.form-check-input:focus {
+  border-color: var(--gc-accent);
+  box-shadow: 0 0 0 0.2rem rgba(13, 148, 136, 0.2);
+}
+.list-group-item-action.active,
+.list-group-item.active {
+  background-color: var(--gc-accent);
+  border-color: var(--gc-accent);
+}
+
+/* --- 2) Layout: navbar on top (natural height), map fills the rest ------- */
+html,
+body {
+  height: 100%;
+}
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--gc-ink);
+  background: var(--gc-bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+#map {
+  flex: 1 1 auto;
+  position: relative;
+  min-height: 0; /* lets the flex child shrink correctly */
+}
+
+/* --- 3) Navbar ------------------------------------------------------------ */
+.navbar {
+  background: #ffffff !important;
+  box-shadow: 0 1px 0 rgba(16, 42, 56, 0.06), 0 4px 16px rgba(16, 42, 56, 0.05);
+  z-index: 1030;
+}
+.navbar-brand {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--gc-accent) !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.navbar-brand .gc-logo {
+  font-size: 1.15rem;
+}
+#nav-search .form-control {
+  border-right: 0;
+}
+
+/* --- 4) Offcanvas + Detail ------------------------------------------------ */
+.offcanvas {
+  border-left: 0 !important;
+  box-shadow: var(--gc-shadow);
+}
+.offcanvas-header {
+  background: var(--gc-accent-soft);
+  border-bottom: 1px solid rgba(13, 148, 136, 0.18);
+}
+.offcanvas-title {
+  font-weight: 700;
+  color: var(--gc-accent-hover);
+}
+.offcanvas-body {
+  background: #fbfdfd;
+}
+
+/* Section headings in the trip detail are styled centrally via .gc-section-title
+   (colored panel header, see below). Deliberately NO more font-size override
+   here: the ID specificity (#trip-detail h6) would otherwise override the
+   class and "freeze" the size. */
+
+/* --- 5) Lists & Cards ---------------------------------------------------- */
+.card {
+  border-color: rgba(16, 42, 56, 0.08);
+  box-shadow: 0 1px 2px rgba(16, 42, 56, 0.04);
+}
+.list-group-item {
+  border-color: rgba(16, 42, 56, 0.08);
+}
+.list-group-item-action {
+  transition: background-color 0.12s ease, transform 0.12s ease;
+}
+.list-group-item-action:hover {
+  background-color: var(--gc-accent-soft);
+}
+
+/* Trips/tours list: a little breathing room + rounded entries. */
+#trips-list .list-group-item,
+#tours-list .list-group-item,
+#guided-results .list-group-item,
+#nav-search-results .list-group-item {
+  border-radius: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+#trips-list,
+#tours-list {
+  --bs-list-group-border-width: 0;
+}
+
+/* Buttons: slightly more compact focus look. */
+.btn {
+  font-weight: 500;
+}
+
+/* --- Basemap switcher (bottom left) ------------------------------- */
+.gc-basemap-ctrl {
+  position: relative;
+}
+.gc-basemap-btn {
+  width: 29px;
+  height: 29px;
+  font-size: 16px;
+  line-height: 1;
+  background: #fff;
+  border: 0;
+  cursor: pointer;
+}
+/* Selection panel opens UPWARD (button sits at the bottom left). */
+.gc-basemap-panel {
+  position: absolute;
+  bottom: 36px;
+  left: 0;
+  min-width: 170px;
+  background: #fff;
+  border-radius: 0.6rem;
+  box-shadow: var(--gc-shadow);
+  border: 1px solid rgba(16, 42, 56, 0.08);
+  padding: 0.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+/* Higher specificity than MapLibre's `.maplibregl-ctrl-group button { width:29px }`,
+   otherwise the list buttons get squeezed to 29px. */
+.gc-basemap-ctrl .gc-basemap-item {
+  width: 100%;
+  height: auto;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  border-radius: 0.4rem;
+  padding: 6px 10px;
+  font: 13px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--gc-ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.gc-basemap-ctrl .gc-basemap-item:hover {
+  background: var(--gc-accent-soft);
+}
+.gc-basemap-ctrl .gc-basemap-item.active {
+  background: var(--gc-accent);
+  color: #fff;
+}
+
+/* Trip detail: each section (waypoints / start accommodation / template /
+   stages / participants / expenses / notes) as a set-off card with an
+   accent bar on the left + an uppercase heading, so the areas
+   separate clearly visually. Theme variables (--bs-*) → light/dark ok. */
+.gc-section {
+  border: 1px solid var(--bs-border-color);
+  border-left: 3px solid var(--bs-primary);
+  border-radius: 0.5rem;
+  padding: 0.7rem 0.8rem;
+  margin-bottom: 0.9rem;
+  background: var(--bs-tertiary-bg);
+  /* so the colored panel header sits cleanly against the rounded corners. */
+  overflow: hidden;
+}
+/* Section heading as a colored panel header: fills the top edge of the
+   surrounding .gc-section (negative margins = its inner padding 0.7rem/0.8rem).
+   Also a collapse toggle: a click hides/shows the box content. */
+.gc-section-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--gc-accent);
+  margin: -0.7rem -0.8rem 0.8rem;
+  padding: 0.45rem 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  user-select: none;
+}
+.gc-section-caret {
+  font-size: 0.8em;
+  transition: transform 0.15s ease;
+}
+/* Collapsed: hide content, header without whitespace below it, caret pointing right. */
+.gc-section.gc-collapsed {
+  padding-bottom: 0;
+}
+.gc-section.gc-collapsed .gc-section-title {
+  margin-bottom: 0;
+}
+.gc-section.gc-collapsed .gc-section-body {
+  display: none;
+}
+.gc-section.gc-collapsed .gc-section-caret {
+  transform: rotate(-90deg);
+}
+
+/* Header block of the trip view: title, key figures (distance/stages/…) and
+   start/mode of transport grouped on a soft green (teal) background. */
+.gc-trip-head {
+  background: var(--gc-accent-soft);
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.6rem;
+  padding: 0.85rem;
+}
+/* Key-figures row in the header block: subtly set off with lines above/below. */
+.gc-trip-stats {
+  border-top: 1px solid var(--bs-border-color);
+  border-bottom: 1px solid var(--bs-border-color);
+  padding: 0.5rem 0;
+}
+
+/* Help/info modal: section sidebar (pills) on the left, content on the right. On narrow
+   screens the sidebar folds above the content (d-md-flex in the markup structure). */
+.help-nav {
+  flex: 0 0 auto;
+  min-width: 12rem;
+}
+@media (min-width: 768px) {
+  .help-nav {
+    border-right: 1px solid var(--bs-border-color);
+    padding-right: 0.75rem;
+  }
+}
+.help-content {
+  min-width: 0;
+}
+.help-content h6 {
+  margin-top: 0.5rem;
+}
+.help-content ul {
+  padding-left: 1.1rem;
+}
+.help-content li {
+  margin-bottom: 0.35rem;
+}
+
+/* --- Trip stages box (tidied: head+status, start/end, route, accommodation) -- */
+/* Compact status icon in the stage header (glyph + color per status); a click cycles
+   the status. Saves space compared to the earlier dropdown. */
+.gc-stage-status-icon {
+  flex: 0 0 auto;
+  width: 1.7rem;
+  height: 1.7rem;
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  line-height: 1;
+  font-size: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gc-status-bg, #6c757d);
+}
+.gc-status-planned {
+  --gc-status-bg: #6c757d;
+}
+.gc-status-active {
+  --gc-status-bg: #0d6efd;
+}
+.gc-status-completed {
+  --gc-status-bg: #198754;
+}
+/* Section divider line + mini heading (ROUTE / ACCOMMODATION). */
+.gc-stage-sec-label {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: var(--bs-secondary-color);
+  border-top: 1px solid var(--bs-border-color);
+  margin-top: 0.6rem;
+  padding-top: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+/* Start/end label with fixed width → clean alignment. */
+.gc-od-label {
+  min-width: 4.4rem;
+  font-weight: 600;
+}
+/* Small gray locality/city hint below start/end/waypoints. */
+.gc-locality {
+  font-size: 0.72rem;
+  color: var(--bs-secondary-color);
+}
+/* Expandable accommodation summary. */
+.gc-acc-summary {
+  text-align: left;
+}
+
+/* Start accommodation marker: orange badge "🛏 START". */
+.gc-acc-start-marker {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: #fd7e14;
+  color: #fff;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  padding: 2px 8px 2px 5px;
+  font: 700 11px/1 system-ui, sans-serif;
+  box-shadow: 0 1px 5px rgba(16, 42, 56, 0.5);
+  cursor: grab;
+  white-space: nowrap;
+}
+.gc-acc-start-marker .gc-acc-bed {
+  font-size: 14px;
+}
+
+/* Leg marker of the selected stage: shows/changes the routing
+   (🧭 follow template / 📏 direct). A click opens the selection. */
+.gc-leg-marker {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #fff;
+  border: 2px solid #6c757d;
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 4px rgba(16, 42, 56, 0.45);
+  cursor: pointer;
+}
+.gc-leg-marker.direct {
+  border-color: #ffc107;
+  background: #fff3cd;
+}
+.gc-leg-marker.selected {
+  background: #ffc107;
+  border-color: #fff;
+  transform: scale(1.2);
+}
+
+/* Supply POI along the stage route (emoji badge on the map). */
+.gc-supply-marker {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1.5px solid #20c997;
+  font-size: 15px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 4px rgba(16, 42, 56, 0.4);
+  cursor: pointer;
+}
+
+/* Explicit intermediate stop of a stage (small dot, the route passes through it). */
+.gc-via-marker {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #20c997;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(16, 42, 56, 0.5);
+  cursor: pointer;
+}
+
+/* Numbered stage markers on the map (clickable). */
+.gc-stage-marker {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #0d6efd;
+  color: #fff;
+  font: 700 12px/1 system-ui, sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 5px rgba(16, 42, 56, 0.5);
+  cursor: pointer;
+}
+.gc-stage-marker.selected {
+  background: #7c3aed; /* same highlight color as the stage route */
+  transform: scale(1.18);
+}
+/* Stage card: clearly separated (more spacing + shadow) and with a status-
+   colored accent edge on the left. */
+.gc-stage-card {
+  border: 1px solid var(--bs-border-color);
+  border-left: 4px solid var(--gc-status-bg, #6c757d);
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 10px rgba(16, 42, 56, 0.1);
+}
+/* Map thumbnail of the stage route (OSM tiles + route) in the route section. */
+.gc-route-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 320 / 120;
+  background: #e8eef2; /* fallback until/in case tiles are missing (offline) */
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+/* QR code in the "Pair with iPhone" dialog. */
+.gc-qr svg {
+  width: 220px;
+  height: 220px;
+  max-width: 100%;
+  display: block;
+}
+
+/* Daily overview / roadbook (table) – also for printing. */
+.gc-rb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.gc-rb-table th,
+.gc-rb-table td {
+  border-bottom: 1px solid var(--bs-border-color);
+  padding: 0.3rem 0.4rem;
+  text-align: left;
+  vertical-align: top;
+}
+.gc-rb-table th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Print/PDF: print only the roadbook (hide map/navbar/panels). */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #roadbook-modal,
+  #roadbook-modal * {
+    visibility: visible;
+  }
+  #roadbook-modal {
+    position: absolute;
+    inset: 0;
+    display: block !important;
+    background: #fff;
+    color: #000;
+  }
+  #roadbook-modal .modal-dialog {
+    max-width: 100%;
+    margin: 0;
+  }
+  #roadbook-modal .modal-content {
+    border: 0;
+    box-shadow: none;
+  }
+  .modal-backdrop,
+  .no-print {
+    display: none !important;
+  }
+  .gc-rb-table th,
+  .gc-rb-table td {
+    border-color: #ccc;
+  }
+}
+/* Stage-number badge in the side menu. */
+.gc-stage-num {
+  min-width: 1.6rem;
+}
+/* Highlight the selected stage card in the side menu. */
+.gc-stage-selected {
+  border-color: #7c3aed !important;
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.55);
+}
+
+/* Stage route row: distance badge + icon buttons all the same height (the
+   ↻ text icon would otherwise be taller than the 14px SVG buttons due to line-height). */
+.gc-route-actions > .badge,
+.gc-route-actions > .btn {
+  height: 1.85rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Crosshair jump button: compact, icon centered (wherever a waypoint/
+   stage destination/start location is shown → a click centers the map there). */
+.gc-jump {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem 0.35rem;
+}
+.gc-jump svg {
+  display: block;
+}
+
+/* --- 6) Map overlays (pick banner, search hits) ----------------------- */
+/* Hit list of the navbar search: floats below the search field over the map. */
+#nav-search-results {
+  top: 100%;
+  z-index: 1035;
+  margin-top: 6px;
+  max-height: 60vh;
+  overflow-y: auto;
+  border-radius: 0.75rem;
+  box-shadow: var(--gc-shadow);
+  background: #fff;
+  padding: 0.35rem;
+  border: 1px solid rgba(16, 42, 56, 0.08);
+}
+
+/* Hint banner during the "place on map" mode. */
+.pick-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-weight: 600;
+  background: var(--gc-accent);
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 999px;
+  box-shadow: 0 4px 16px rgba(13, 148, 136, 0.45);
+  pointer-events: none;
+}
+
+/* Trip-planning mode indicator: a persistent pill at the top-center of the map
+   while a trip is open — visible EVEN when the detail panel was closed.
+   Deliberately amber (not the teal accent) so the "special mode" (map clicks set
+   trip waypoints) clearly stands out. Left: the pill itself (reopens the panel),
+   right: "✕" to exit the mode. */
+.trip-mode-indicator {
+  position: absolute;
+  /* Placed below the POI bar (top:8px) so the mode pill doesn't sit at the same
+     height as the POI buttons. */
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  align-items: stretch;
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-weight: 600;
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(180, 83, 9, 0.45);
+}
+.trip-mode-indicator .tmi-open,
+.trip-mode-indicator .tmi-exit {
+  border: 0;
+  background: #b45309;
+  color: #fff;
+  padding: 8px 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.trip-mode-indicator .tmi-label {
+  max-width: 46vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.trip-mode-indicator .tmi-open:hover { background: #92400e; }
+.trip-mode-indicator .tmi-exit {
+  padding: 8px 12px;
+  font-weight: 700;
+  border-left: 1px solid rgba(255, 255, 255, 0.35);
+}
+.trip-mode-indicator .tmi-exit:hover { background: #7c2d12; }
+
+/* MapLibre popups: align with the theme. */
+.maplibregl-popup-content {
+  border-radius: 0.6rem;
+  box-shadow: var(--gc-shadow);
+  padding: 0.6rem 0.75rem;
+}
+
+/* --- 7) POI management ---------------------------------------------------- */
+.poi-row .input-group-text {
+  background: #fff;
+}
+.poi-row-off .form-control {
+  color: var(--gc-muted);
+  text-decoration: line-through;
+  background: #f3f5f6;
+}
+
+/* --- 8) Miscellany --------------------------------------------------------- */
+.form-text {
+  color: var(--gc-muted);
+}
+.modal-content {
+  border: 0;
+  border-radius: 0.85rem;
+  box-shadow: var(--gc-shadow);
+}
+.modal-header {
+  background: var(--gc-accent-soft);
+  border-bottom: 1px solid rgba(13, 148, 136, 0.18);
+}
+.modal-title {
+  font-weight: 700;
+  color: var(--gc-accent-hover);
+}
+
+/* --- POI category bar above the map ---------------------------------- */
+.poi-bar {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  max-width: calc(100% - 64px); /* room for the map controls at the top right */
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 2px;
+  scrollbar-width: thin;
+}
+.poi-bar:empty {
+  display: none;
+}
+.poi-bar-label {
+  flex: 0 0 auto;
+  font: 600 12px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #fff;
+  background: var(--gc-accent);
+  padding: 6px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(16, 42, 56, 0.2);
+}
+.poi-chip {
+  flex: 0 0 auto;
+  font: 12px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  border: 0;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--gc-ink);
+  padding: 6px 11px;
+  border-radius: 999px;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(16, 42, 56, 0.2);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.poi-chip:hover {
+  background: var(--gc-accent);
+  color: #fff;
+}
+.poi-chip-clear {
+  font-weight: 700;
+}
+
+/* Node markers of the tour drawing (first "S", the rest numbered). */
+.gc-tour-node {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 700 11px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #fff;
+  background: var(--gc-accent);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(16, 42, 56, 0.4);
+}
+
+/* --- Komoot style: insert handle between two waypoints ------------------ */
+/* Small white dot in the middle of the segment; dragging inserts an
+   intermediate stop here (see planner.js renderMap → _insertStopAt). */
+.gc-insert-handle {
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border: 2px solid var(--gc-accent);
+  border-radius: 50%;
+  cursor: grab;
+  box-shadow: 0 1px 3px rgba(16, 42, 56, 0.35);
+  opacity: 0.55;
+  /* NO transform transition: MapLibre positions the marker via inline
+     `transform`; a transition on it would animate every zoom repositioning
+     → the handle "jumps". Only animate opacity/box-shadow. */
+  transition: opacity 0.12s ease, box-shadow 0.12s ease;
+}
+.gc-insert-handle:hover {
+  /* Hover highlight without transform (that belongs to MapLibre for positioning). */
+  opacity: 1;
+  box-shadow: 0 0 0 4px rgba(13, 148, 136, 0.25), 0 1px 3px rgba(16, 42, 56, 0.35);
+}
+.gc-insert-handle:active {
+  cursor: grabbing;
+}

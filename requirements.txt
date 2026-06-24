@@ -1,0 +1,5 @@
+# Runtime core (always needed; sufficient for local development with SQLite).
+Django>=5.0,<5.2
+djangorestframework>=3.15,<4
+django-environ>=0.11,<1
+whitenoise>=6.6,<7

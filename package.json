@@ -1,0 +1,13 @@
+{
+  "name": "gonecycling-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Frontend-/Krypto-Module für GoneCycling Companion (Browser + Node-Tests)",
+  "scripts": {
+    "test": "node --import ./tests-js/setup.mjs --test"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  }
+}

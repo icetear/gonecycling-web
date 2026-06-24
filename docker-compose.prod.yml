@@ -1,0 +1,47 @@
+# Production/test deployment behind an nginx reverse proxy
+# (e.g. https://example.com/gonecycling/), analogous to the local ORS server.
+#
+# A single container (Django/Gunicorn); data in SQLite on a volume.
+# Bound to 127.0.0.1 only — TLS + routing is handled by the nginx in front.
+#
+# Start:    docker compose -f docker-compose.prod.yml up -d --build
+# Logs:     docker compose -f docker-compose.prod.yml logs -f
+# Stop:     docker compose -f docker-compose.prod.yml down
+#
+# Required values (secrets/hosts) come from .env (see .env.example).
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    # .env provides DJANGO_SECRET_KEY + DJANGO_ALLOWED_HOSTS (and optionally
+    # GC_BASE_PATH / GC_PORT). DEBUG/DATABASE_URL are fixed here.
+    env_file: .env
+    environment:
+      DEBUG: "False"
+      # Sub-path behind the reverse proxy. Default matching example.com.
+      GC_BASE_PATH: "${GC_BASE_PATH:-/gonecycling}"
+      # SQLite on the volume (4 slashes = absolute path /data/db.sqlite3).
+      DATABASE_URL: "sqlite:////data/db.sqlite3"
+      # Directory for the update signal (see deploy-state mount below).
+      DEPLOY_SIGNAL_DIR: "/deploy"
+    volumes:
+      - gcdata:/data
+      # Bind mount for the admin update button: the app only writes a signal
+      # here, the host watcher (deploy/host/) reads it. NOT the Docker socket!
+      - ./deploy-state:/deploy
+    ports:
+      # Reachable locally only; nginx forwards /gonecycling/ here.
+      - "127.0.0.1:${GC_PORT:-8071}:8000"
+    # Allows the container to reach the host (local Postfix on :25) via
+    # EMAIL_HOST=host.docker.internal. Needed on Linux (Docker Desktop has it natively).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,os; p=os.environ.get('GC_BASE_PATH',''); urllib.request.urlopen('http://127.0.0.1:8000'+p+'/api/v1/health')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  gcdata:

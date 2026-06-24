@@ -1,0 +1,50 @@
+# Continuous Integration: secret scan (ggshield) + Python and JS tests.
+# Runs on every push and on pull requests.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # 1) Secret scan with GitGuardian/ggshield. Runs only if an API key is set as
+  #    the repo secret GITGUARDIAN_API_KEY (otherwise skipped, so that
+  #    forks without a key don't turn red).
+  secret-scan:
+    runs-on: ubuntu-latest
+    env:
+      GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # ggshield needs the full history for `scan ci`
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --upgrade ggshield
+      - name: ggshield secret scan
+        if: ${{ env.GITGUARDIAN_API_KEY != '' }}
+        run: ggshield secret scan ci
+
+  # 2) Python: lint (ruff) + tests (pytest).
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: pytest -q
+
+  # 3) JavaScript: frontend/crypto module tests (Node test runner).
+  js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: npm test

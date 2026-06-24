@@ -1,0 +1,17 @@
+# GitGuardian / ggshield – configuration of the secret scan (CLI & CI).
+# Deliberate FALSE POSITIVES are excluded here: pure test fixtures and
+# obvious placeholders. There are NO real secrets in the repo
+# (see README/SECURITY). Docs: https://docs.gitguardian.com/ggshield-docs/configuration
+#
+# Note: This file applies to `ggshield` (e.g. in a CI action). The
+# automatic monitoring in the GitGuardian dashboard (GitHub app) is NOT
+# controlled by it – resolve incidents reported there in the dashboard if needed.
+version: 2
+
+secret:
+  # Skip directories with test fixtures (dummy passwords/tokens/secrets).
+  ignored_paths:
+    - "accounts/tests/**"
+    - "sync/tests/**"
+    - "web/tests/**"
+    - "tests-js/**"

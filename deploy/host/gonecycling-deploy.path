@@ -1,0 +1,16 @@
+# systemd path unit: watches the web app's update request and starts the
+# gonecycling-deploy.service when it appears.
+#
+# Adapt the path to your repo location (must match the bind mount
+# "./deploy-state:/deploy" from docker-compose.prod.yml).
+[Unit]
+Description=Watches the GoneCycling web app's update request
+
+[Path]
+# A single signal: the admin UI writes deploy-state/request with
+# an action field ("check" or "deploy"); the service decides based on it.
+PathExists=/opt/gonecycling-web/deploy-state/request
+Unit=gonecycling-deploy.service
+
+[Install]
+WantedBy=multi-user.target

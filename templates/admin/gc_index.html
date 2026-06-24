@@ -1,0 +1,125 @@
+{% extends "admin/index.html" %}
+{# Extends the admin start page with a server update / version panel showing
+   live status (AJAX + polling, no manual reload). Own template name
+   → extends the real admin/index.html without recursion. #}
+{% block content %}
+<div class="module" id="gc-update" style="margin-bottom: 1rem;">
+  <h2>Server update</h2>
+  <div style="padding: 10px 14px;">
+    {# Server-side initial state; the JS updates #gc-info live afterwards. #}
+    <div id="gc-info">
+      {% with v=gc_deploy.version %}
+      {% if v %}
+        Installed: <code>{{ v.installed }}</code>{% if v.installed_date %} <small>({{ v.installed_date }})</small>{% endif %}<br>
+        Repo <code>{{ v.branch }}</code>: <code>{{ v.origin }}</code>{% if v.origin_date %} <small>({{ v.origin_date }})</small>{% endif %}<br>
+        {% if v.behind == "0" %}<strong style="color:#198754;">&#10003; up to date</strong>
+        {% else %}<strong style="color:#b02a37;">{{ v.behind }} Commit(s) behind</strong>{% endif %}
+        {% if v.ahead and v.ahead != "0" %} &middot; {{ v.ahead }} ahead{% endif %}
+        <br><small>last checked: {{ v.checked_at }}</small>
+      {% else %}<small>Not yet checked.</small>{% endif %}
+      {% endwith %}
+      {% if gc_deploy.status %}<br><small>Last update: {{ gc_deploy.status.state }} ({{ gc_deploy.status.at }}){% if gc_deploy.status.commit %} &rarr; <code>{{ gc_deploy.status.commit }}</code>{% endif %}</small>{% endif %}
+    </div>
+
+    <div id="gc-progress" style="display:none; margin:.6rem 0; color:#444;">
+      <span class="gc-spin" aria-hidden="true"></span>
+      <span id="gc-progress-text"></span>
+    </div>
+
+    <div style="margin-top:.6rem;">
+      {# Forms remain as a no-JS fallback; the JS intercepts them and does AJAX. #}
+      <form id="gc-check-form" method="post" action="{% url 'check_version' %}" style="display:inline;">
+        {% csrf_token %}<input type="hidden" name="next" value="{% url 'admin:index' %}">
+        <button type="submit" class="button">Check version</button>
+      </form>
+      <form id="gc-deploy-form" method="post" action="{% url 'deploy' %}" style="display:inline; margin-left:8px;">
+        {% csrf_token %}<input type="hidden" name="next" value="{% url 'admin:index' %}">
+        <button type="submit" class="button" style="background:#198754;">Update now</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<style>
+  .gc-spin{display:inline-block;width:14px;height:14px;border:2px solid #ccc;border-top-color:#198754;border-radius:50%;animation:gc-spin .8s linear infinite;vertical-align:-2px;}
+  @keyframes gc-spin{to{transform:rotate(360deg);}}
+</style>
+<script>
+(function(){
+  const STATUS_URL = "{% url 'deploy_status' %}";
+  const CSRF = "{{ csrf_token }}";
+  const info = document.getElementById('gc-info');
+  const prog = document.getElementById('gc-progress');
+  const progText = document.getElementById('gc-progress-text');
+  const checkForm = document.getElementById('gc-check-form');
+  const deployForm = document.getElementById('gc-deploy-form');
+  const buttons = document.querySelectorAll('#gc-update button');
+
+  function esc(x){ return String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  function render(d){
+    const v = d.version, s = d.status; let h = '';
+    if (v){
+      h += 'Installed: <code>'+esc(v.installed)+'</code>'+(v.installed_date?' <small>('+esc(v.installed_date)+')</small>':'')+'<br>';
+      h += 'Repo <code>'+esc(v.branch||'')+'</code>: <code>'+esc(v.origin)+'</code>'+(v.origin_date?' <small>('+esc(v.origin_date)+')</small>':'')+'<br>';
+      h += (v.behind === '0')
+        ? '<strong style="color:#198754;">✓ up to date</strong>'
+        : '<strong style="color:#b02a37;">'+esc(v.behind)+' Commit(s) behind</strong>';
+      if (v.ahead && v.ahead !== '0'){ h += ' · '+esc(v.ahead)+' ahead'; }
+      h += '<br><small>last checked: '+esc(v.checked_at)+'</small>';
+    } else { h += '<small>Not yet checked.</small>'; }
+    if (s){ h += '<br><small>Last update: '+esc(s.state)+' ('+esc(s.at)+')'+(s.commit?' → <code>'+esc(s.commit)+'</code>':'')+'</small>'; }
+    info.innerHTML = h;
+  }
+
+  async function fetchStatus(){
+    const r = await fetch(STATUS_URL, {headers:{'X-Requested-With':'XMLHttpRequest'}, cache:'no-store'});
+    if (!r.ok) throw new Error(r.status); return r.json();
+  }
+
+  function busy(on, text){
+    prog.style.display = on ? '' : 'none';
+    progText.textContent = text || '';
+    buttons.forEach(b => b.disabled = on);
+  }
+
+  // POST the signal, then poll until the relevant state changes.
+  async function run(url, busyText, changed, timeoutMs){
+    let baseline = null;
+    try { baseline = await fetchStatus(); } catch(e){}
+    busy(true, busyText);
+    try {
+      await fetch(url, {method:'POST', headers:{'X-CSRFToken':CSRF,'X-Requested-With':'XMLHttpRequest'}});
+    } catch(e){ /* a deploy briefly restarts the server — never mind */ }
+    const start = Date.now();
+    const poll = setInterval(async () => {
+      let d = null;
+      try { d = await fetchStatus(); render(d); } catch(e){ /* server may be restarting */ }
+      if (d && changed(d, baseline)){ clearInterval(poll); busy(false); }
+      else if (Date.now() - start > timeoutMs){
+        clearInterval(poll); busy(false);
+        info.innerHTML += '<br><small style="color:#b02a37;">Timeout — check the logs (deploy-state/deploy.log).</small>';
+      }
+    }, 2000);
+  }
+
+  checkForm.addEventListener('submit', e => {
+    e.preventDefault();
+    run("{% url 'check_version' %}", 'Checking version …',
+        (d, base) => d.version && (!base || !base.version || d.version.checked_at !== base.version.checked_at),
+        60000);
+  });
+  deployForm.addEventListener('submit', e => {
+    e.preventDefault();
+    if (!confirm('Update now? The container will be rebuilt (1–2 min).')) return;
+    run("{% url 'deploy' %}", 'Update in progress … (container is being rebuilt, server restarts briefly)',
+        (d, base) => d.status && d.status.state !== 'running' && (!base || !base.status || d.status.at !== base.status.at),
+        240000);
+  });
+
+  // Fetch the current state once on load (fresh, without a reload).
+  fetchStatus().then(render).catch(()=>{});
+})();
+</script>
+{{ block.super }}
+{% endblock %}

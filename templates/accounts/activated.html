@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GoneCycling – Profile confirmed</title>
+  <style>
+    /* Standalone, lightweight page (no Bootstrap needed — it is only opened
+       once from the mail link). */
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 0;
+           min-height: 100vh; display: grid; place-items: center;
+           background: #f4f6f8; color: #1f2933; }
+    .card { background: #fff; padding: 2.5rem; border-radius: 12px;
+            box-shadow: 0 8px 30px rgba(0,0,0,.08); max-width: 420px; text-align: center; }
+    h1 { margin: 0 0 .75rem; font-size: 1.4rem; }
+    p { color: #52606d; line-height: 1.5; }
+    .btn { display: inline-block; margin-top: 1.25rem; padding: .6rem 1.2rem;
+           background: #0d6efd; color: #fff; text-decoration: none; border-radius: 8px;
+           font-weight: 600; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #14181c; color: #e4e7eb; }
+      .card { background: #1f242a; box-shadow: none; }
+      p { color: #9aa5b1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>✅ Profile confirmed</h1>
+    {% if already %}
+      <p>Your GoneCycling profile was already activated. You can sign in now.</p>
+    {% else %}
+      <p>Thanks! Your GoneCycling profile is now active. You can sign in now.</p>
+    {% endif %}
+    <a class="btn" href="{{ base_path }}/?login=1">Open the app – sign in now</a>
+  </div>
+</body>
+</html>

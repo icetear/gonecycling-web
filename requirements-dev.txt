@@ -1,0 +1,5 @@
+# Development + tests (SQLite, no PostgreSQL needed).
+-r requirements.txt
+pytest>=8,<9
+pytest-django>=4.8,<5
+ruff>=0.6
